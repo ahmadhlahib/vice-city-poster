@@ -147,53 +147,125 @@
     ctx.closePath();
   }
 
-  function palm(ctx, baseX, baseY, height, lean, color, flip) {
+  // Palm tree: tapered curved trunk + feathery drooping fronds
+  function palm(ctx, baseX, baseY, height, lean, color, flip, s) {
+    s = s || 1;
     ctx.save();
     ctx.translate(baseX, baseY);
     if (flip) ctx.scale(-1, 1);
     ctx.fillStyle = color;
     ctx.strokeStyle = color;
-    // trunk
-    var topX = lean, topY = -height;
     ctx.lineCap = 'round';
-    for (var i = 0; i < 18; i++) {
-      var t0 = i / 18, t1 = (i + 1) / 18;
-      var x0 = lean * t0 * t0, y0 = -height * t0, x1 = lean * t1 * t1, y1 = -height * t1;
-      ctx.lineWidth = 34 - 20 * t0;
-      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.lineJoin = 'round';
+    function trunkPt(t) {
+      // quadratic bezier (0,0) -> ctrl (lean*0.15, -h*0.6) -> (lean, -h)
+      var cx = lean * 0.15, cy = -height * 0.6, ex = lean, ey = -height;
+      var mt = 1 - t;
+      return [2 * mt * t * cx + t * t * ex, 2 * mt * t * cy + t * t * ey];
     }
-    // fronds
-    var fronds = [[-2.7, 1.0], [-2.2, 1.15], [-1.6, 1.1], [-1.0, 1.0], [-0.45, 0.95], [-3.2, 0.8], [0.15, 0.75]];
-    fronds.forEach(function (f) {
-      var ang = f[0], len = height * 0.42 * f[1];
-      var ex = topX + Math.cos(ang) * len, ey = topY + Math.sin(ang) * len + len * 0.35;
-      var cx = topX + Math.cos(ang) * len * 0.5, cy = topY + Math.sin(ang) * len * 0.5 - len * 0.25;
-      ctx.beginPath();
-      ctx.moveTo(topX, topY);
-      ctx.quadraticCurveTo(cx, cy - 14, ex, ey);
-      ctx.quadraticCurveTo(cx, cy + 14, topX, topY + 6);
-      ctx.fill();
+    var left = [], right = [];
+    for (var i = 0; i <= 30; i++) {
+      var t = i / 30, p = trunkPt(t), q = trunkPt(Math.min(1, t + 0.01));
+      var dx = q[0] - p[0], dy = q[1] - p[1], len = Math.hypot(dx, dy) || 1;
+      var nx = -dy / len, ny = dx / len, w = (16 - 9 * t) * s;
+      left.push([p[0] + nx * w, p[1] + ny * w]);
+      right.push([p[0] - nx * w, p[1] - ny * w]);
+    }
+    ctx.beginPath();
+    left.forEach(function (p, k) { k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    right.reverse().forEach(function (p) { ctx.lineTo(p[0], p[1]); });
+    ctx.closePath();
+    ctx.fill();
+
+    var top = trunkPt(1), tx = top[0], ty = top[1];
+    var L = height * 0.44;
+    var fronds = [-178, -158, -135, -112, -88, -66, -42, -20, 0, 160, 20];
+    fronds.forEach(function (deg, n) {
+      var a = deg * Math.PI / 180, len = L * (0.8 + ((n * 37) % 10) / 30);
+      var c1x = tx + Math.cos(a) * len * 0.55, c1y = ty + Math.sin(a) * len * 0.55 - len * 0.18;
+      var ex = tx + Math.cos(a) * len, ey = ty + Math.sin(a) * len * 0.6 + len * 0.42;
+      // spine
+      ctx.lineWidth = 6 * s;
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo(c1x, c1y, ex, ey); ctx.stroke();
+      // leaflets
+      for (var k = 1; k <= 13; k++) {
+        var t = k / 14, mt = 1 - t;
+        var px = mt * mt * tx + 2 * mt * t * c1x + t * t * ex;
+        var py = mt * mt * ty + 2 * mt * t * c1y + t * t * ey;
+        var gx = 2 * mt * (c1x - tx) + 2 * t * (ex - c1x), gy = 2 * mt * (c1y - ty) + 2 * t * (ey - c1y);
+        var gl = Math.hypot(gx, gy) || 1; gx /= gl; gy /= gl;
+        var ll = len * 0.3 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.05)), 0.7) + 6;
+        ctx.lineWidth = (7 - 4 * t) * s;
+        [1, -1].forEach(function (side) {
+          var ang = side * 0.75;
+          var vx = gx * Math.cos(ang) - gy * Math.sin(ang), vy = gx * Math.sin(ang) + gy * Math.cos(ang);
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.quadraticCurveTo(px + vx * ll * 0.6, py + vy * ll * 0.6, px + vx * ll, py + vy * ll + ll * 0.7);
+          ctx.stroke();
+        });
+      }
     });
-    ctx.beginPath(); ctx.arc(topX, topY + 4, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(tx, ty + 3, 10 * s, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
-  function drawScene(ctx, W, H, th, horizon, seedR) {
+  function skyline(ctx, W, horizon, r, color, minH, maxH, winColor, winRate, rim) {
+    var x = -10, wins = [], tops = [];
+    ctx.fillStyle = color;
+    while (x < W + 10) {
+      var bw = 34 + r() * 66, bh = minH + r() * (maxH - minH);
+      if (r() < 0.1) bh *= 1.5;
+      ctx.fillRect(x, horizon - bh, bw, bh + 2);
+      if (r() < 0.25) ctx.fillRect(x + bw / 2 - 1.5, horizon - bh - 26, 3, 26); // antenna
+      if (r() < 0.3) ctx.fillRect(x + bw * 0.2, horizon - bh - 10, bw * 0.6, 10); // roof step
+      tops.push([x, horizon - bh, bw]);
+      if (winRate) {
+        for (var wy = horizon - bh + 12; wy < horizon - 10; wy += 16) {
+          for (var wx = x + 7; wx < x + bw - 7; wx += 12) if (r() < winRate) wins.push([wx, wy]);
+        }
+      }
+      x += bw + r() * 6;
+    }
+    if (winRate) {
+      ctx.fillStyle = winColor;
+      wins.forEach(function (p) { ctx.globalAlpha = 0.35 + r() * 0.5; ctx.fillRect(p[0], p[1], 4, 6); });
+      ctx.globalAlpha = 1;
+    }
+    if (rim) {
+      ctx.save();
+      ctx.strokeStyle = rim; ctx.shadowColor = rim; ctx.shadowBlur = 12; ctx.lineWidth = 2; ctx.globalAlpha = 0.8;
+      tops.forEach(function (t) { if (r() < 0.35) { ctx.beginPath(); ctx.moveTo(t[0], t[1]); ctx.lineTo(t[0] + t[2], t[1]); ctx.stroke(); } });
+      ctx.restore();
+    }
+  }
+
+  function drawScene(ctx, W, H, th, horizon, seedR, centered) {
     // sky
     ctx.fillStyle = lingrad(ctx, 0, 0, 0, horizon, th.sky);
     ctx.fillRect(0, 0, W, horizon);
 
     // stars in upper sky
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    for (var s = 0; s < 70; s++) {
-      var sx = seedR() * W, sy = seedR() * horizon * 0.45, sr = seedR() * 1.8 + 0.4;
-      ctx.globalAlpha = 0.25 + seedR() * 0.6;
+    for (var s = 0; s < 90; s++) {
+      var sx = seedR() * W, sy = seedR() * horizon * 0.42, sr = seedR() * 1.8 + 0.4;
+      ctx.globalAlpha = 0.2 + seedR() * 0.6;
       ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
 
+    // soft cloud bands
+    for (var c = 0; c < 6; c++) {
+      var cy = horizon * (0.35 + seedR() * 0.4), cx0 = seedR() * W, cw = 260 + seedR() * 420, chh = 10 + seedR() * 18;
+      var cg = ctx.createRadialGradient(cx0, cy, 0, cx0, cy, cw / 2);
+      cg.addColorStop(0, 'rgba(255,220,240,0.22)'); cg.addColorStop(1, 'rgba(255,220,240,0)');
+      ctx.save(); ctx.translate(cx0, cy); ctx.scale(1, chh / (cw / 2)); ctx.translate(-cx0, -cy);
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx0, cy, cw / 2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
     // striped sun
-    var sunR = W * 0.3, sunX = W * 0.72, sunY = horizon - sunR * 0.55;
+    var sunR = centered ? W * 0.36 : W * 0.3, sunX = centered ? W * 0.5 : W * 0.72, sunY = horizon - sunR * (centered ? 0.62 : 0.55);
     var off = document.createElement('canvas');
     off.width = sunR * 2 + 4; off.height = sunR * 2 + 4;
     var o = off.getContext('2d');
@@ -210,29 +282,46 @@
     ctx.drawImage(off, sunX - sunR - 2, sunY - sunR - 2);
     ctx.restore();
 
-    // skyline
-    ctx.fillStyle = th.city;
-    var x = -10;
-    var windows = [];
-    while (x < W + 10) {
-      var bw = 40 + seedR() * 70, bh = 60 + seedR() * 210;
-      if (seedR() < 0.12) bh += 140;
-      ctx.fillRect(x, horizon - bh, bw, bh + 2);
-      for (var wy = horizon - bh + 14; wy < horizon - 12; wy += 18) {
-        for (var wx = x + 8; wx < x + bw - 8; wx += 14) {
-          if (seedR() < 0.18) windows.push([wx, wy]);
-        }
-      }
-      x += bw + seedR() * 8;
-    }
-    ctx.fillStyle = th.accent;
+    // distant mountains
+    ctx.save();
     ctx.globalAlpha = 0.55;
-    windows.forEach(function (p) { ctx.fillRect(p[0], p[1], 5, 7); });
+    ctx.fillStyle = th.city;
+    ctx.beginPath();
+    ctx.moveTo(0, horizon);
+    var mx = 0;
+    while (mx < W) {
+      var peak = 50 + seedR() * 130, half = 90 + seedR() * 140;
+      ctx.lineTo(mx + half, horizon - peak);
+      mx += half * 2;
+      ctx.lineTo(mx, horizon - 20 - seedR() * 30);
+    }
+    ctx.lineTo(W, horizon); ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // haze over the horizon
+    ctx.fillStyle = lingrad(ctx, 0, horizon - 220, 0, horizon, ['rgba(255,120,180,0)', th.sky[th.sky.length - 1]]);
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(0, horizon - 220, W, 220);
     ctx.globalAlpha = 1;
+
+    // far + near skyline
+    ctx.save(); ctx.globalAlpha = 0.6;
+    skyline(ctx, W, horizon, seedR, th.city, 50, 170, th.accent, 0.08, null);
+    ctx.restore();
+    skyline(ctx, W, horizon, seedR, th.city, 40, centered ? 150 : 230, th.accent, 0.16, th.neon);
 
     // floor
     ctx.fillStyle = lingrad(ctx, 0, horizon, 0, H, ['#12021f', '#050008']);
     ctx.fillRect(0, horizon, W, H - horizon);
+    // sun reflection on the ground
+    ctx.save();
+    ctx.fillStyle = th.sun[1]; ctx.shadowColor = th.sun[1]; ctx.shadowBlur = 16;
+    for (var rf = 0; rf < 9; rf++) {
+      var ry = horizon + 8 + Math.pow(rf, 1.5) * 9, rw = sunR * (1.3 - rf * 0.12);
+      ctx.globalAlpha = 0.55 - rf * 0.05;
+      ctx.fillRect(sunX - rw / 2, ry, rw, 3 + rf * 0.6);
+    }
+    ctx.restore();
     // perspective grid
     ctx.save();
     ctx.strokeStyle = th.grid;
@@ -256,9 +345,97 @@
     ctx.shadowBlur = 0;
 
     // palms
-    palm(ctx, W * 0.07, horizon + 40, horizon * 0.72, 70, th.palm, false);
-    palm(ctx, W * 0.17, horizon + 50, horizon * 0.48, 40, th.palm, false);
-    palm(ctx, W * 0.95, horizon + 40, horizon * 0.66, 60, th.palm, true);
+    palm(ctx, W * 0.06, horizon + 60, horizon * 0.78, 90, th.palm, false, 1.2);
+    palm(ctx, W * 0.2, horizon + 40, horizon * 0.45, 50, th.palm, false, 0.8);
+    palm(ctx, W * 0.95, horizon + 60, horizon * 0.7, 80, th.palm, true, 1.1);
+    palm(ctx, W * 0.83, horizon + 30, horizon * 0.38, 40, th.palm, true, 0.7);
+  }
+
+  // Person cut out of their own background (mask from the on-device segmenter)
+  function drawCutout(ctx, F, th, state) {
+    var W = F.w, bottom = F.name - 40, top = 30, rh = bottom - top;
+    var img = state.img, iw = img.width, ih = img.height;
+    var scale = (rh * 1.06 / ih) * (state.zoom || 1);
+    var dw = iw * scale, dh = ih * scale;
+    var dx = (W - dw) / 2 + (state.ox || 0), dy = bottom - dh + (state.oy || 0);
+    var off = document.createElement('canvas');
+    off.width = W; off.height = bottom;
+    var o = off.getContext('2d');
+    o.filter = th.photoFilter;
+    o.drawImage(img, dx, dy, dw, dh);
+    o.filter = 'none';
+    o.globalCompositeOperation = 'soft-light';
+    o.globalAlpha = 0.55;
+    o.fillStyle = lingrad(o, 0, 0, W, bottom, th.grade);
+    o.fillRect(0, 0, W, bottom);
+    o.globalAlpha = 0.3;
+    o.globalCompositeOperation = 'screen';
+    var leak = o.createRadialGradient(W * 0.85, bottom * 0.15, 10, W * 0.85, bottom * 0.15, W * 0.6);
+    leak.addColorStop(0, th.neon); leak.addColorStop(1, 'rgba(0,0,0,0)');
+    o.fillStyle = leak; o.fillRect(0, 0, W, bottom);
+    o.globalAlpha = 1;
+    // keep only the person
+    o.globalCompositeOperation = 'destination-in';
+    o.filter = 'blur(1.2px)';
+    o.drawImage(state.mask, dx, dy, dw, dh);
+    o.filter = 'none';
+    // soften the photo's own left/right edges
+    var fe = Math.min(70, dw * 0.08);
+    o.globalCompositeOperation = 'destination-out';
+    o.fillStyle = lingrad(o, dx, 0, dx + fe, 0, ['rgba(0,0,0,1)', 'rgba(0,0,0,0)']);
+    o.fillRect(dx - 2, 0, fe + 2, bottom);
+    o.fillStyle = lingrad(o, dx + dw - fe, 0, dx + dw, 0, ['rgba(0,0,0,0)', 'rgba(0,0,0,1)']);
+    o.fillRect(dx + dw - fe, 0, fe + 2, bottom);
+    // melt the bottom into the text area
+    o.globalCompositeOperation = 'destination-out';
+    o.fillStyle = lingrad(o, 0, bottom - rh * 0.2, 0, bottom, ['rgba(0,0,0,0)', 'rgba(0,0,0,1)']);
+    o.fillRect(0, bottom - rh * 0.2, W, rh * 0.2);
+    o.globalCompositeOperation = 'source-over';
+
+    ctx.save();
+    ctx.shadowColor = th.neon; ctx.shadowBlur = 50;
+    ctx.drawImage(off, 0, 0);
+    ctx.shadowColor = th.accent; ctx.shadowBlur = 14;
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+  }
+
+  // ---------- On-device background removal (MediaPipe, loaded only when needed) ----------
+  var MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  var MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
+  var segPromise = null;
+  function getSegmenter() {
+    if (!segPromise) {
+      segPromise = import(MP + '/vision_bundle.mjs').then(function (v) {
+        return v.FilesetResolver.forVisionTasks(MP + '/wasm').then(function (fs) {
+          return v.ImageSegmenter.createFromOptions(fs, {
+            baseOptions: { modelAssetPath: MODEL, delegate: 'CPU' },
+            runningMode: 'IMAGE', outputCategoryMask: false, outputConfidenceMasks: true
+          });
+        });
+      });
+      segPromise.catch(function () { segPromise = null; });
+    }
+    return segPromise;
+  }
+  function makeMask(img) {
+    return getSegmenter().then(function (seg) {
+      var res = seg.segment(img);
+      var m = res.confidenceMasks[0];
+      var w = m.width, h = m.height, data = m.getAsFloat32Array();
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      var cx = c.getContext('2d'), id = cx.createImageData(w, h), d = id.data;
+      for (var i = 0; i < data.length; i++) {
+        var a = (data[i] - 0.3) / 0.4;
+        a = a < 0 ? 0 : a > 1 ? 1 : a;
+        d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = 255;
+        d[i * 4 + 3] = a * 255;
+      }
+      cx.putImageData(id, 0, 0);
+      if (res.close) res.close();
+      return c;
+    });
   }
 
   function drawSilhouette(o, w, h, th) {
@@ -375,8 +552,10 @@
     ctx.clearRect(0, 0, W, H);
     ctx.direction = lang === 'ar' ? 'rtl' : 'ltr';
 
-    drawScene(ctx, W, H, th, F.horizon, rng(hash(state.theme + state.format)));
-    drawPanel(ctx, F, th, state);
+    var cut = !!(state.img && state.mask && state.cutout !== false);
+    drawScene(ctx, W, H, th, F.horizon, rng(hash(state.theme + state.format)), cut);
+    if (cut) drawCutout(ctx, F, th, state);
+    else drawPanel(ctx, F, th, state);
 
     // legibility shade under the text
     ctx.fillStyle = lingrad(ctx, 0, F.horizon - 60, 0, H, ['rgba(5,0,12,0)', 'rgba(5,0,12,0.72)', 'rgba(5,0,12,0.92)']);
@@ -482,7 +661,7 @@
       })).then(function () { return document.fonts.ready; })
     : Promise.resolve();
 
-  window.VCP = { drawPoster: drawPoster, identity: identity, fontsReady: fontsReady, LANG: LANG };
+  window.VCP = { drawPoster: drawPoster, identity: identity, fontsReady: fontsReady, makeMask: makeMask, LANG: LANG };
 
   // ---------- Page UI ----------
   function $(id) { return document.getElementById(id); }
@@ -540,10 +719,11 @@
         c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(url);
-        state.img = c; state.zoom = 1; state.ox = 0; state.oy = 0;
+        state.img = c; state.mask = null; state.zoom = 1; state.ox = 0; state.oy = 0;
         $('zoom').value = 1;
         document.body.classList.add('has-photo');
         render();
+        cutOut();
       };
       img.onerror = function () { URL.revokeObjectURL(url); toast(T.badType || 'Could not read that photo.'); };
       img.src = url;
@@ -557,7 +737,31 @@
     });
     drop.addEventListener('drop', function (e) { loadFile(e.dataTransfer.files[0]); });
     $('removePhoto').addEventListener('click', function () {
-      state.img = null; document.body.classList.remove('has-photo'); render();
+      state.img = null; state.mask = null; segStatus(''); document.body.classList.remove('has-photo'); render();
+    });
+
+    // background removal
+    var segToken = 0;
+    function segStatus(msg) { var s = $('segStatus'); if (s) s.textContent = msg; }
+    function cutOut() {
+      if (!state.img || state.mask || !$('cutout').checked) return;
+      var token = ++segToken, img = state.img;
+      segStatus(T.cutting || 'Removing the background…');
+      makeMask(img).then(function (mask) {
+        if (token !== segToken || state.img !== img) return;
+        state.mask = mask; state.ox = 0; state.oy = 0; state.zoom = 1; $('zoom').value = 1;
+        segStatus('');
+        render();
+      }, function () {
+        if (token !== segToken) return;
+        segStatus(T.cutFail || 'Could not remove the background, using the frame style.');
+      });
+    }
+    $('cutout').addEventListener('change', function (e) {
+      state.cutout = e.target.checked;
+      state.ox = 0; state.oy = 0;
+      if (e.target.checked) cutOut(); else segStatus('');
+      render();
     });
 
     // zoom + drag
@@ -610,7 +814,7 @@
     // export
     var pageUrl = location.origin + location.pathname;
     function fileName() {
-      var n = (state.name || 'poster').replace(/[^\w؀-ۿ-]+/g, '-').slice(0, 30);
+      var n = (state.name || 'poster').replace(/[^\w\u0600-\u06FF-]+/g, '-').slice(0, 30);
       return 'vice-city-poster-' + n + '.jpg';
     }
     function toBlob() {

@@ -33,7 +33,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Outfit:ital,wght@0,400;0,600;0,700;0,800;1,600&family=Pacifico&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css?v=1">
+<link rel="stylesheet" href="assets/style.css?v=2">
 
 <script type="application/ld+json">
 {
@@ -143,6 +143,8 @@
               <small>or drop it here · JPG, PNG or WebP, up to 25 MB</small>
             </label>
             <div class="photo-tools">
+              <label class="check"><input type="checkbox" id="cutout" checked> Remove my photo background (runs on your phone)</label>
+              <span class="seg" id="segStatus" role="status"></span>
               <label>Zoom <input type="range" id="zoom" min="1" max="3" step="0.01" value="1"></label>
               <button type="button" class="linkbtn" id="removePhoto">Remove photo</button>
             </div>
@@ -228,6 +230,8 @@
 
 <script>
 window.VCP_TEXT = {
+  cutting: 'Removing the background…',
+  cutFail: 'Could not remove the background, using the frame style.',
   badType: 'Please choose a JPG, PNG or WebP photo.',
   tooBig: 'That photo is over 25 MB. Try a smaller one.',
   saved: 'Poster saved! Post it and tag your friends.',
@@ -236,6 +240,6 @@ window.VCP_TEXT = {
   shareText: 'What if you were in GTA 6? I made my Vice City poster. Make yours free:'
 };
 </script>
-<script src="assets/app.js?v=1" defer></script>
+<script src="assets/app.js?v=2" defer></script>
 </body>
 </html>
